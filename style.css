@@ -110,3 +110,24 @@ svg{display:block}
 .nav-btn.active svg{animation:pop .5s var(--spring)}
 
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ============================================ */
+/* ============ APP GENERATOR ================= */
+/* ============================================ */
+
+.amg-steps{display:flex;justify-content:center;gap:14px;margin:6px 0 20px}
+.amg-dot{width:32px;height:32px;border:var(--b);border-radius:50%;background:#fff;box-shadow:3px 3px 0 #000;position:relative;transition:all .35s var(--spring)}
+.amg-dot.active{background:#000;transform:scale(1.15)}
+.amg-dot.done{background:#000}
+.amg-dot.done::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:900}
+
+.amg-title{font-size:16px;font-weight:900;letter-spacing:-.3px;margin-bottom:8px}
+.amg-sub{font-size:13px;font-weight:600;line-height:1.5;margin-bottom:14px;opacity:.75}
+.amg-chip{display:inline-block;border:var(--b);border-radius:999px;padding:5px 14px;font-size:12px;font-weight:900;letter-spacing:1px;box-shadow:2px 2px 0 #000;margin-bottom:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.amg-success{text-align:center;padding:8px 0 4px}
+.amg-check{width:72px;height:72px;margin:0 auto 16px;border:3px solid #000;border-radius:50%;display:grid;place-items:center;font-size:36px;font-weight:900;background:#fff;box-shadow:var(--sh);animation:pop .55s var(--spring)}
+.amg-success h3{font-size:20px;font-weight:900;letter-spacing:-.5px;margin:0 0 6px}
+.amg-success p{font-size:12px;font-weight:700;opacity:.7;margin-bottom:4px}
+
+.amg-response{margin-top:16px;border:var(--b);border-radius:var(--r);padding:12px;background:#fff;box-shadow:3px 3px 0 #000;font-family:SF Mono,Menlo,monospace;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}
