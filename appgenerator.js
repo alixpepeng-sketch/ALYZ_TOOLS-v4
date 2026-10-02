@@ -1,114 +1,175 @@
+/* ============================================
+   APP GENERATOR — ALIGHT MOTION PREMIUM
+   Web Tools Version (fetch + ES Module)
+   Flow: send-magiclink → verify-account → apply-premium
+   ============================================ */
+
 const ENDPOINT = 'https://anita-studio.netlify.app/.netlify/functions/amprem';
 const COOLDOWN = 30; // detik jeda antar kirim magic link
 
-// Sesuaikan 2 fungsi ini dengan format request/response API amprem yang sebenarnya.
+/* ============ API CALL ============ */
+async function apiPost(action, payload) {
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload })
+  });
+
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+
+  if (!res.ok || (data && (data.error || data.success === false || data.status === false))) {
+    const msg =
+      (data && (data.error || data.message || data.msg)) ||
+      ('Server membalas ' + res.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
 async function sendMagicLink(email) {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'send', email })
-  });
-  let data = null;
-  try { data = await res.json(); } catch (_) { /* respon bukan JSON */ }
-  if (!res.ok || (data && (data.error || data.success === false || data.status === false))) {
-    throw new Error((data && (data.error || data.message || data.msg)) || ('Server membalas ' + res.status));
-  }
-  return data;
+  return apiPost('send-magiclink', { email });
 }
 
-async function confirmMagicLink(email, link) {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'confirm', email, link })
-  });
-  let data = null;
-  try { data = await res.json(); } catch (_) { /* respon bukan JSON */ }
-  if (!res.ok || (data && (data.error || data.success === false || data.status === false))) {
-    throw new Error((data && (data.error || data.message || data.msg)) || ('Server membalas ' + res.status));
-  }
-  return data;
+async function verifyAccount(email, rawLink) {
+  return apiPost('verify-account', { email, rawLink });
 }
 
+async function applyPremium(email, idToken) {
+  return apiPost('apply-premium', { email, idToken });
+}
+
+/* ============ STATE ============ */
 let lastSent = 0;
 
+/* ============ MAIN EXPORT ============ */
 export function openAppGeneratorTool(body) {
   body.innerHTML = `
-    <button id="back" class="back-btn"><span class="back-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span>KEMBALI</span></button>
-    <h3>APP GENERATOR</h3>
-    <div id="step"></div>`;
+    <div class="field-block">
+      <label>EMAIL @GMAIL.COM</label>
+      <input id="amEmail" type="email" placeholder="emailkamu@gmail.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div id="amMsg"></div>
+    <button id="amNext" class="btn btn-primary" type="button">1. KIRIM MAGIC LINK</button>
+    <div class="field-block" style="margin-top:10px">
+      <label>RAW MAGIC LINK (dari email)</label>
+      <textarea id="amLink" rows="3" placeholder="https://..." autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+    </div>
+    <button id="amVerify" class="btn btn-outline" type="button" disabled>2. VERIFIKASI</button>
+    <button id="amApply" class="btn btn-primary" type="button" disabled style="margin-top:8px;">3. AKTIFKAN PREMIUM</button>
+    <div id="amResult"></div>
+  `;
 
-  const step = body.querySelector('#step');
-  body.querySelector('#back').onclick = () => { body.style.display = 'none'; body.innerHTML = ''; };
+  const $ = (id) => body.querySelector('#' + id);
+  const msg = $('amMsg');
+  const result = $('amResult');
+  const inputEmail = $('amEmail');
+  const inputLink = $('amLink');
+  const btnNext = $('amNext');
+  const btnVerify = $('amVerify');
+  const btnApply = $('amApply');
 
-  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let savedEmail = '';
+  let savedIdToken = '';
+
+  const esc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+
   const emailOk = (e) => /^[a-z0-9._%+-]+@gmail\.com$/i.test(e);
 
-  function stepEmail(prefill = '') {
-    step.innerHTML = `
-      <p class="label" style="margin-bottom:10px">LANGKAH 1 DARI 2</p>
-      <input id="email" class="input" type="email" placeholder="emailkamu@gmail.com" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(prefill)}">
-      <div id="msg"></div>
-      <button id="next" class="btn">KIRIM MAGIC LINK</button>`;
+  /* ===== STEP 1 : KIRIM MAGIC LINK ===== */
+  btnNext.onclick = async () => {
+    const email = inputEmail.value.trim();
+    msg.innerHTML = '';
+    result.innerHTML = '';
 
-    const msg = step.querySelector('#msg');
-    const btn = step.querySelector('#next');
+    if (!emailOk(email)) {
+      msg.innerHTML = '<div class="error">MASUKKAN EMAIL @GMAIL.COM YANG VALID</div>';
+      return;
+    }
 
-    const go = async () => {
-      const email = step.querySelector('#email').value.trim();
-      if (!emailOk(email)) {
-        msg.innerHTML = '<div class="error">MASUKKAN EMAIL @GMAIL.COM YANG VALID</div>';
-        return;
-      }
-      const wait = Math.ceil(COOLDOWN - (Date.now() - lastSent) / 1000);
-      if (wait > 0) { msg.innerHTML = `<div class="error">TUNGGU ${wait} DETIK LAGI</div>`; return; }
+    const wait = Math.ceil(COOLDOWN - (Date.now() - lastSent) / 1000);
+    if (wait > 0) {
+      msg.innerHTML = '<div class="error">TUNGGU ' + wait + ' DETIK LAGI</div>';
+      return;
+    }
 
-      btn.disabled = true;
-      msg.innerHTML = '<div class="status"><span class="spin"></span>MENGIRIM MAGIC LINK...</div>';
-      try {
-        await sendMagicLink(email);
-        lastSent = Date.now();
-        stepLink(email);
-      } catch (err) {
-        msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
-        btn.disabled = false;
-      }
-    };
+    btnNext.disabled = true;
+    msg.innerHTML = '<div class="loading">MENGIRIM MAGIC LINK...</div>';
 
-    btn.onclick = go;
-    step.querySelector('#email').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  }
+    try {
+      await sendMagicLink(email);
+      lastSent = Date.now();
+      savedEmail = email;
+      inputEmail.disabled = true;
+      inputLink.focus();
+      btnVerify.disabled = false;
+      msg.innerHTML = '<div class="result-box">Magic link terkirim ke <b>' + esc(email) + '</b>.<br>Cek inbox/spam → copy full URL → paste di kolom bawah → klik VERIFIKASI.</div>';
+    } catch (err) {
+      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+      btnNext.disabled = false;
+    }
+  };
 
-  function stepLink(email) {
-    step.innerHTML = `
-      <p class="label" style="margin-bottom:10px">LANGKAH 2 DARI 2</p>
-      <div class="chip" style="display:inline-block;margin-bottom:14px">${esc(email)}</div>
-      <p style="font-size:13px;font-weight:600;margin-bottom:14px">Magic link sudah dikirim. Buka email, salin link-nya, lalu tempel di bawah ini.</p>
-      <input id="link" class="input" type="text" placeholder="Tempel magic link di sini" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <div id="msg"></div>
-      <button id="confirm" class="btn">CONFIRM</button>
-      <button id="resend" class="btn btn-light">KIRIM ULANG</button>`;
+  /* ===== STEP 2 : VERIFIKASI ===== */
+  btnVerify.onclick = async () => {
+    const link = inputLink.value.trim();
+    msg.innerHTML = '';
+    result.innerHTML = '';
 
-    const msg = step.querySelector('#msg');
-    const btn = step.querySelector('#confirm');
+    if (!link) {
+      msg.innerHTML = '<div class="error">TEMPEL RAW MAGIC LINK DULU</div>';
+      return;
+    }
+    if (!savedEmail) {
+      msg.innerHTML = '<div class="error">KIRIM MAGIC LINK DULU (STEP 1)</div>';
+      return;
+    }
 
-    step.querySelector('#resend').onclick = () => stepEmail(email);
+    btnVerify.disabled = true;
+    msg.innerHTML = '<div class="loading">VERIFIKASI AKUN...</div>';
 
-    btn.onclick = async () => {
-      const link = step.querySelector('#link').value.trim();
-      if (!link) { msg.innerHTML = '<div class="error">TEMPEL MAGIC LINK DULU</div>'; return; }
+    try {
+      const res = await verifyAccount(savedEmail, link);
+      const idToken = res.idToken || (res.profile && res.profile.idToken);
+      if (!idToken) throw new Error('idToken tidak ditemukan di response');
 
-      btn.disabled = true;
-      msg.innerHTML = '<div class="status"><span class="spin"></span>MENGONFIRMASI...</div>';
-      try {
-        await confirmMagicLink(email, link);
-        msg.innerHTML = '<div class="result"><p>BERHASIL DIKONFIRMASI</p></div>';
-      } catch (err) {
-        msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
-      }
-      btn.disabled = false;
-    };
-  }
+      savedIdToken = idToken;
+      inputLink.disabled = true;
+      btnApply.disabled = false;
+      msg.innerHTML = '<div class="result-box">Akun <b>' + esc(savedEmail) + '</b> berhasil diverifikasi.<br>Klik tombol <b>AKTIFKAN PREMIUM</b> untuk lanjut.</div>';
+    } catch (err) {
+      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+      btnVerify.disabled = false;
+    }
+  };
 
-  stepEmail();
-}
+  /* ===== STEP 3 : APPLY PREMIUM ===== */
+  btnApply.onclick = async () => {
+    msg.innerHTML = '';
+    result.innerHTML = '';
+
+    if (!savedEmail || !savedIdToken) {
+      msg.innerHTML = '<div class="error">SELESAIKAN STEP 1 & 2 DULU</div>';
+      return;
+    }
+
+    btnApply.disabled = true;
+    msg.innerHTML = '<div class="loading">MENGATIFKAN PREMIUM...</div>';
+
+    try {
+      const premium = await applyPremium(savedEmail, savedIdToken);
+      msg.innerHTML = '';
+      result.innerHTML =
+        '<div class="check-circle" style="margin:14px auto;">&#10003;</div>' +
+        '<h3 style="text-align:center;font-size:14px;font-weight:900;letter-spacing:2px;margin-bottom:6px;">PREMIUM AKTIF</h3>' +
+        '<p style="text-align:center;font-size:12px;font-weight:700;margin-bottom:10px;">' + esc(savedEmail) + ' — 1 tahun</p>' +
+        '<div class="result-box" style="font-family:SF Mono,Menlo,monospace;font-size:10px;max-height:150px;overflow:auto;">' + esc(JSON.stringify(premium, null, 2)) + '</div>';
+    } catch (err) {
+      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+      btnApply.disabled = false;
+    }
+  };
+    }
