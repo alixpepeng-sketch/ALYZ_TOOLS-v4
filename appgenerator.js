@@ -1,237 +1,244 @@
 /* ============================================
    APP GENERATOR — ALIGHT MOTION PREMIUM
-   Web Tools Version
-   Flow: send-magiclink → verify-account → apply-premium
+   Match dengan CSS neubrutalism style kamu
    ============================================ */
 
 const ENDPOINT = 'https://anita-studio.netlify.app/.netlify/functions/amprem';
 const COOLDOWN = 30;
 
-/* ============ API CALL ============ */
+/* ============ API ============ */
 async function apiPost(action, payload) {
-  console.log('[AM-API] Request:', action, payload);
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload })
+  });
 
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({ action, ...payload })
-    });
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
 
-    console.log('[AM-API] Status:', res.status);
-
-    const text = await res.text();
-    console.log('[AM-API] Raw:', text.slice(0, 300));
-
-    let data = null;
-    try {
-      data = JSON.parse(text);
-    } catch (_) {
-      throw new Error('Response bukan JSON: ' + text.slice(0, 120));
-    }
-
-    if (!res.ok || (data && (data.error || data.success === false || data.status === false))) {
-      const msg = (data && (data.error || data.message || data.msg)) || ('Server ' + res.status);
-      throw new Error(msg);
-    }
-    return data;
-  } catch (err) {
-    console.error('[AM-API] Error:', err);
-    if (err.message && err.message.includes('Failed to fetch')) {
-      throw new Error('Koneksi gagal. Kemungkinan CORS atau server mati.');
-    }
-    throw err;
+  if (!res.ok || (data && (data.error || data.success === false))) {
+    const msg = (data && (data.error || data.message || data.msg)) || ('Server ' + res.status);
+    throw new Error(msg);
   }
+  return data;
 }
 
-async function sendMagicLink(email) {
-  return apiPost('send-magiclink', { email });
-}
-
-async function verifyAccount(email, rawLink) {
-  return apiPost('verify-account', { email, rawLink });
-}
-
-async function applyPremium(email, idToken) {
-  return apiPost('apply-premium', { email, idToken });
-}
+const sendMagicLink = (email) => apiPost('send-magiclink', { email });
+const verifyAccount = (email, rawLink) => apiPost('verify-account', { email, rawLink });
+const applyPremium = (email, idToken) => apiPost('apply-premium', { email, idToken });
 
 /* ============ STATE ============ */
 let lastSent = 0;
 
-/* ============ MAIN EXPORT ============ */
+/* ============ MAIN ============ */
 export function openAppGeneratorTool(body) {
   body.innerHTML = `
-    <div class="field-block">
-      <label>EMAIL @GMAIL.COM</label>
-      <input id="amEmail" type="email" placeholder="emailkamu@gmail.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="amgBack" class="back-btn">
+      <span class="back-ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </span>
+      <span>KEMBALI</span>
+    </button>
+
+    <h3>APP GENERATOR</h3>
+
+    <div class="amg-steps" id="amgSteps">
+      <span class="amg-dot active"></span>
+      <span class="amg-dot"></span>
+      <span class="amg-dot"></span>
     </div>
-    <div id="amMsg"></div>
-    <button id="amNext" class="btn btn-primary" type="button">1. KIRIM MAGIC LINK</button>
 
-    <div class="field-block" style="margin-top:10px">
-      <label>RAW MAGIC LINK (dari email)</label>
-      <textarea id="amLink" rows="3" placeholder="https://..." autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-    </div>
-    <button id="amVerify" class="btn btn-outline" type="button" disabled>2. VERIFIKASI</button>
-    <button id="amApply" class="btn btn-primary" type="button" disabled style="margin-top:8px;">3. AKTIFKAN PREMIUM</button>
+    <div class="card" id="amgCard"></div>
 
-    <div id="amResult"></div>
-
-    <details style="margin-top:12px;border:2px solid #000;border-radius:12px;padding:10px;background:#f4f4f4;">
-      <summary style="cursor:pointer;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;">DEBUG LOG</summary>
-      <pre id="amDebug" style="font-size:10px;font-family:SF Mono,Menlo,monospace;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow:auto;margin-top:8px;line-height:1.4;"></pre>
-    </details>
+    <div id="amgResult"></div>
   `;
 
-  const $ = (id) => body.querySelector('#' + id);
-  const msg = $('amMsg');
-  const result = $('amResult');
-  const debug = $('amDebug');
-  const inputEmail = $('amEmail');
-  const inputLink = $('amLink');
-  const btnNext = $('amNext');
-  const btnVerify = $('amVerify');
-  const btnApply = $('amApply');
+  const $ = (sel) => body.querySelector(sel);
+  const card = $('#amgCard');
+  const dots = body.querySelectorAll('.amg-dot');
+  const result = $('#amgResult');
+
+  const backBtn = $('#amgBack');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      body.classList.add('closing');
+      setTimeout(() => {
+        body.classList.remove('open', 'closing');
+        body.innerHTML = '';
+      }, 240);
+    });
+  }
 
   let savedEmail = '';
   let savedIdToken = '';
-
-  function log(text) {
-    const time = new Date().toLocaleTimeString('id-ID');
-    debug.textContent += '[' + time + '] ' + text + '\n';
-    debug.scrollTop = debug.scrollHeight;
-  }
 
   const esc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
 
-  const emailOk = (e) => /^[a-z0-9._%+-]+@gmail\.com$/i.test(e);
+  function setStep(n) {
+    dots.forEach((d, i) => {
+      d.classList.remove('active', 'done');
+      if (i + 1 < n) d.classList.add('done');
+      else if (i + 1 === n) d.classList.add('active');
+    });
+  }
 
-  log('Tool loaded. Endpoint: ' + ENDPOINT);
+  /* ============ STEP 1 ============ */
+  function step1(prefill = '') {
+    setStep(1);
+    card.innerHTML = `
+      <div class="label" style="margin-bottom:10px">LANGKAH 1 DARI 3</div>
+      <input id="amgEmail" class="input" type="email" placeholder="emailkamu@gmail.com" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(prefill)}">
+      <div id="amgMsg"></div>
+      <button id="amgNext" class="btn">KIRIM MAGIC LINK</button>
+    `;
 
-  /* ===== STEP 1 : KIRIM MAGIC LINK ===== */
-  btnNext.onclick = async () => {
-    const email = inputEmail.value.trim();
-    msg.innerHTML = '';
-    result.innerHTML = '';
+    const msg = $('#amgMsg');
+    const btn = $('#amgNext');
+    const emailInput = $('#amgEmail');
 
-    if (!emailOk(email)) {
-      msg.innerHTML = '<div class="error">MASUKKAN EMAIL @GMAIL.COM YANG VALID</div>';
-      log('ERROR: Email tidak valid: ' + email);
-      return;
-    }
+    const go = async () => {
+      const email = emailInput.value.trim();
+      msg.innerHTML = '';
 
-    const wait = Math.ceil(COOLDOWN - (Date.now() - lastSent) / 1000);
-    if (wait > 0) {
-      msg.innerHTML = '<div class="error">TUNGGU ' + wait + ' DETIK LAGI</div>';
-      log('Cooldown aktif, tunggu ' + wait + 's');
-      return;
-    }
-
-    btnNext.disabled = true;
-    msg.innerHTML = '<div class="loading">MENGIRIM MAGIC LINK...</div>';
-    log('Mengirim magic link ke ' + email);
-
-    try {
-      const res = await sendMagicLink(email);
-      log('SUKSES kirim magic link');
-      log('Response: ' + JSON.stringify(res).slice(0, 200));
-
-      lastSent = Date.now();
-      savedEmail = email;
-      inputEmail.disabled = true;
-      inputLink.focus();
-      btnVerify.disabled = false;
-      msg.innerHTML = '<div class="result-box">Magic link terkirim ke <b>' + esc(email) + '</b>.<br>Cek inbox/spam → copy full URL verifikasi → paste di kolom bawah → klik VERIFIKASI.</div>';
-    } catch (err) {
-      log('GAGAL: ' + err.message);
-      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
-      btnNext.disabled = false;
-    }
-  };
-
-  /* ===== STEP 2 : VERIFIKASI ===== */
-  btnVerify.onclick = async () => {
-    const link = inputLink.value.trim();
-    msg.innerHTML = '';
-    result.innerHTML = '';
-
-    if (!link) {
-      msg.innerHTML = '<div class="error">TEMPEL RAW MAGIC LINK DULU</div>';
-      log('ERROR: Link kosong');
-      return;
-    }
-    if (!savedEmail) {
-      msg.innerHTML = '<div class="error">KIRIM MAGIC LINK DULU (STEP 1)</div>';
-      log('ERROR: Belum step 1');
-      return;
-    }
-
-    btnVerify.disabled = true;
-    msg.innerHTML = '<div class="loading">VERIFIKASI AKUN...</div>';
-    log('Verifikasi akun ' + savedEmail);
-    log('Link: ' + link.slice(0, 80) + '...');
-
-    try {
-      const res = await verifyAccount(savedEmail, link);
-      log('SUKSES verifikasi');
-      log('Response keys: ' + Object.keys(res).join(', '));
-
-      const idToken = res.idToken || (res.profile && res.profile.idToken);
-      if (!idToken) {
-        log('ERROR: idToken tidak ada di response');
-        throw new Error('idToken tidak ditemukan di response');
+      if (!/^[a-z0-9._%+-]+@gmail\.com$/i.test(email)) {
+        msg.innerHTML = '<div class="error">MASUKKAN EMAIL @GMAIL.COM YANG VALID</div>';
+        return;
       }
 
-      savedIdToken = idToken;
-      log('idToken diperoleh, panjang: ' + idToken.length);
+      const wait = Math.ceil(COOLDOWN - (Date.now() - lastSent) / 1000);
+      if (wait > 0) {
+        msg.innerHTML = `<div class="error">TUNGGU ${wait} DETIK LAGI</div>`;
+        return;
+      }
 
-      inputLink.disabled = true;
-      btnApply.disabled = false;
-      msg.innerHTML = '<div class="result-box">Akun <b>' + esc(savedEmail) + '</b> berhasil diverifikasi.<br>Klik tombol <b>AKTIFKAN PREMIUM</b> untuk lanjut.</div>';
-    } catch (err) {
-      log('GAGAL verifikasi: ' + err.message);
-      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
-      btnVerify.disabled = false;
-    }
-  };
+      btn.disabled = true;
+      btn.textContent = 'MENGIRIM...';
+      msg.innerHTML = '<div class="status"><span class="spin"></span>MENGIRIM MAGIC LINK</div>';
 
-  /* ===== STEP 3 : APPLY PREMIUM ===== */
-  btnApply.onclick = async () => {
-    msg.innerHTML = '';
-    result.innerHTML = '';
+      try {
+        await sendMagicLink(email);
+        lastSent = Date.now();
+        savedEmail = email;
+        setTimeout(() => step2(), 400);
+      } catch (err) {
+        msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'KIRIM MAGIC LINK';
+      }
+    };
 
-    if (!savedEmail || !savedIdToken) {
-      msg.innerHTML = '<div class="error">SELESAIKAN STEP 1 & 2 DULU</div>';
-      log('ERROR: Step sebelumnya belum selesai');
-      return;
-    }
+    btn.addEventListener('click', go);
+    emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  }
 
-    btnApply.disabled = true;
-    msg.innerHTML = '<div class="loading">MENGATIFKAN PREMIUM...</div>';
-    log('Mengaktifkan premium untuk ' + savedEmail);
+  /* ============ STEP 2 ============ */
+  function step2() {
+    setStep(2);
+    card.innerHTML = `
+      <div class="label" style="margin-bottom:10px">LANGKAH 2 DARI 3</div>
+      <div class="big" style="font-size:14px;margin-bottom:14px">${esc(savedEmail)}</div>
+      <p style="font-size:13px;font-weight:600;line-height:1.5;margin-bottom:14px">Magic link sudah dikirim. Buka email → salin URL verifikasi → tempel di bawah.</p>
+      <input id="amgLink" class="input" type="text" placeholder="tempel magic link di sini" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div id="amgMsg2"></div>
+      <button id="amgVerify" class="btn">VERIFIKASI</button>
+      <button id="amgResend" class="btn btn-light">KIRIM ULANG</button>
+    `;
 
-    try {
-      const premium = await applyPremium(savedEmail, savedIdToken);
-      log('SUKSES premium aktif');
-      log('Response: ' + JSON.stringify(premium).slice(0, 200));
+    const msg = $('#amgMsg2');
+    const btn = $('#amgVerify');
+    const inputLink = $('#amgLink');
 
+    $('#amgResend').addEventListener('click', () => step1(savedEmail));
+
+    btn.addEventListener('click', async () => {
+      const link = inputLink.value.trim();
       msg.innerHTML = '';
-      result.innerHTML =
-        '<div class="check-circle" style="margin:14px auto;">&#10003;</div>' +
-        '<h3 style="text-align:center;font-size:14px;font-weight:900;letter-spacing:2px;margin-bottom:6px;">PREMIUM AKTIF</h3>' +
-        '<p style="text-align:center;font-size:12px;font-weight:700;margin-bottom:10px;">' + esc(savedEmail) + ' — 1 tahun</p>' +
-        '<div class="result-box" style="font-family:SF Mono,Menlo,monospace;font-size:10px;max-height:150px;overflow:auto;">' + esc(JSON.stringify(premium, null, 2)) + '</div>';
-    } catch (err) {
-      log('GAGAL premium: ' + err.message);
-      msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
-      btnApply.disabled = false;
-    }
-  };
-     }
+
+      if (!link) {
+        msg.innerHTML = '<div class="error">TEMPEL MAGIC LINK DULU</div>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'VERIFIKASI...';
+      msg.innerHTML = '<div class="status"><span class="spin"></span>MEMVERIFIKASI AKUN</div>';
+
+      try {
+        const res = await verifyAccount(savedEmail, link);
+        const idToken = res.idToken || (res.profile && res.profile.idToken);
+        if (!idToken) throw new Error('idToken tidak ditemukan');
+        savedIdToken = idToken;
+        setTimeout(() => step3(), 400);
+      } catch (err) {
+        msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'VERIFIKASI';
+      }
+    });
+  }
+
+  /* ============ STEP 3 ============ */
+  function step3() {
+    setStep(3);
+    card.innerHTML = `
+      <div class="label" style="margin-bottom:10px">LANGKAH 3 DARI 3</div>
+      <div class="big" style="font-size:14px;margin-bottom:4px">${esc(savedEmail)}</div>
+      <div style="font-size:11px;font-weight:900;letter-spacing:2px;margin-bottom:16px">STATUS: VERIFIED</div>
+      <div id="amgMsg3"></div>
+      <button id="amgApply" class="btn">AKTIFKAN PREMIUM</button>
+    `;
+
+    const msg = $('#amgMsg3');
+    const btn = $('#amgApply');
+
+    btn.addEventListener('click', async () => {
+      msg.innerHTML = '';
+      btn.disabled = true;
+      btn.textContent = 'MEMPROSES...';
+      msg.innerHTML = '<div class="status"><span class="spin"></span>MENGATIFKAN PREMIUM</div>';
+
+      try {
+        const premium = await applyPremium(savedEmail, savedIdToken);
+        done(premium);
+      } catch (err) {
+        msg.innerHTML = '<div class="error">GAGAL: ' + esc(err.message) + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'AKTIFKAN PREMIUM';
+      }
+    });
+  }
+
+  /* ============ DONE ============ */
+  function done(premium) {
+    setStep(4);
+    card.innerHTML = `
+      <div style="text-align:center;padding:6px 0 4px">
+        <div style="width:70px;height:70px;margin:0 auto 14px;border:3px solid #000;border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:900;box-shadow:5px 5px 0 #000">&#10003;</div>
+        <div style="font-size:18px;font-weight:900;letter-spacing:-.3px;margin-bottom:4px">PREMIUM AKTIF</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:14px">${esc(savedEmail)} — 1 TAHUN</div>
+      </div>
+    `;
+
+    result.innerHTML = `
+      <div class="result">
+        <div class="label" style="margin-bottom:8px">RESPONSE</div>
+        <p style="font-family:SF Mono,Menlo,monospace;font-size:11px;line-height:1.5">${esc(JSON.stringify(premium, null, 2))}</p>
+      </div>
+      <button id="amgDone" class="btn" style="margin-top:14px">SELESAI</button>
+    `;
+
+    $('#amgDone').addEventListener('click', () => {
+      body.classList.add('closing');
+      setTimeout(() => {
+        body.classList.remove('open', 'closing');
+        body.innerHTML = '';
+      }, 240);
+    });
+  }
+
+  step1();
+         }
